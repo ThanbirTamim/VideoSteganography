@@ -1,0 +1,780 @@
+using System;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+using WK.Libraries.BetterFolderBrowserNS;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Diagnostics;
+
+namespace _8DirectionXorBasedVideoSteganography
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        public string[] selectedFolders;
+        public string videoFilePath = "";
+        public const string mainPath = @"C:\VideoSteganography";
+        public const string allFrames = @"C:\VideoSteganography\allFrames";
+        public const string allFramesStego = @"C:\VideoSteganography\allFramesStego";
+        public const string stegoFrameStore = @"C:\VideoSteganography\stegoFrameStore";
+        public const string allCombineFrames = @"C:\VideoSteganography\allCombinedFrames";
+        public string embedTime = "";
+        public int frameNo = 0;
+        public string message = "";
+        public string messageBinary = "";
+        int bitno = 0;
+        private void btnSelectVideo_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                OpenFileDialog openFileDialog = new OpenFileDialog();
+
+                openFileDialog.InitialDirectory = "c:\\";
+
+                openFileDialog.Filter = "All Media Files|*.avi;*.mp4;*.mov;*.3g2;*.3gp;*.AVI;*.MP4;*.MOV;*.3G2;*.3GP";
+                openFileDialog.FilterIndex = 2;
+                openFileDialog.RestoreDirectory = true;
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    //Get the path of specified file
+                    videoFilePath = openFileDialog.FileName;
+                }
+
+                if (!String.IsNullOrEmpty(videoFilePath))
+                {
+                    Cursor.Current = Cursors.WaitCursor;
+                    //ffmpeg -i C:\VideoSteganography\Cover.avi -vf fps=30 C:\VideoSteganography\allFrames\%06d.bmp
+                    //C:\\VideoSteganography\\video.avi
+                    System.Diagnostics.Process process = new System.Diagnostics.Process();
+                    System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo();
+                    startInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                    startInfo.FileName = "cmd.exe";
+                    startInfo.Arguments = "/C ffmpeg -i " + videoFilePath + " -vf fps=25 C:\\VideoSteganography\\allFrames\\%06d.bmp";
+                    process.StartInfo = startInfo;
+                    process.Start();
+                    process.WaitForExit();
+                    Cursor.Current = Cursors.Default;
+
+
+                    int frames = (Directory.GetFiles(@"C:\VideoSteganography\allFrames")).Length;
+                    Random rnd = new Random();
+                    frameNo = rnd.Next(0, frames);
+                    txtFrameSelected.Text = (frameNo).ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                //MessageBox.Show("" + ex);
+            }
+
+
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            //MessageBox.Show(""+ System.Reflection.Assembly.GetExecutingAssembly().Location);
+            try
+            {
+                lblMAE.Visible = false;
+                lblMSE.Visible = false;
+                lblPSNR.Visible = false;
+                lblRMSE.Visible = false;
+                lblSNR.Visible = false;
+                lblSSIM.Visible = false;
+                lblTGSI.Visible = false;
+                lblValidationHeading.Visible = false;
+                btnValidation.Visible = false;
+
+                if (!Directory.Exists(mainPath))
+                {
+                    // Try to create the directory.
+                    DirectoryInfo di = Directory.CreateDirectory(mainPath);
+                }
+
+                if (!Directory.Exists(stegoFrameStore))
+                {
+                    // Try to create the directory.
+                    DirectoryInfo di = Directory.CreateDirectory(stegoFrameStore);
+                }
+
+                if (!Directory.Exists(allFrames))
+                {
+                    // Try to create the directory.
+                    DirectoryInfo di = Directory.CreateDirectory(allFrames);
+                }
+
+                if (!Directory.Exists(allFramesStego))
+                {
+                    // Try to create the directory.
+                    DirectoryInfo di = Directory.CreateDirectory(allFramesStego);
+                }
+                if (!Directory.Exists(allCombineFrames))
+                {
+                    // Try to create the directory.
+                    DirectoryInfo di = Directory.CreateDirectory(allCombineFrames);
+                }
+            }
+            catch (IOException ioex)
+            {
+                MessageBox.Show("" + ioex.Message);
+            }
+        }
+
+        public int frameRate = 30;
+
+
+        /*
+         * this method will help to embed secet message into pixel
+         */
+        private Color embed_data_pixel_rgba(Bitmap imag, int x1, int y1, int smbp, int data) //param (image, dimension-x, dimension-y, tracking_index, data_of_messagelength_or_messagebit_or_framelength)
+        {
+            Color pixel = imag.GetPixel(x1, y1);
+            string red = Convert.ToString(pixel.R, 2).PadLeft(8, '0');
+            string green = Convert.ToString(pixel.G, 2).PadLeft(8, '0');
+            string blue = Convert.ToString(pixel.B, 2).PadLeft(8, '0');
+
+            int newred, newgreen, newblue;
+            if (data == 0)//data == 0 means store embedding secret mesage bit
+            {
+                //here we are replacing the secrect message bit into the last position in red and converted to integer
+                newred = Convert.ToInt32((new StringBuilder(red) { [7] = passE[smbp + 0] }.ToString()), 2);
+                newgreen = Convert.ToInt32((new StringBuilder(green) { [7] = passE[smbp + 1] }.ToString()), 2);
+                newblue = Convert.ToInt32((new StringBuilder(blue) { [7] = passE[smbp + 2] }.ToString()), 2);
+            }
+            else if (data == 1) //data == 1 means store embedding secret mesage length
+            {
+                //here we are replacing the secrect message bit into the last position in red and converted to integer
+                newred = Convert.ToInt32((new StringBuilder(red) { [7] = messageLengthBinaryChar[smbp + 0] }.ToString()), 2);
+                newgreen = Convert.ToInt32((new StringBuilder(green) { [7] = messageLengthBinaryChar[smbp + 1] }.ToString()), 2);
+                newblue = Convert.ToInt32((new StringBuilder(blue) { [7] = messageLengthBinaryChar[smbp + 2] }.ToString()), 2);
+            }
+            else //data == 2 means store embedding secret mesage length
+            {
+                //here we are replacing the secrect message bit into the last position in red and converted to integer
+                newred = Convert.ToInt32((new StringBuilder(red) { [7] = frameLengthBinaryChar[smbp + 0] }.ToString()), 2);
+                newgreen = Convert.ToInt32((new StringBuilder(green) { [7] = frameLengthBinaryChar[smbp + 1] }.ToString()), 2);
+                newblue = Convert.ToInt32((new StringBuilder(blue) { [7] = frameLengthBinaryChar[smbp + 2] }.ToString()), 2);
+            }
+
+            Color myRgbColor = new System.Drawing.Color();
+            myRgbColor = Color.FromArgb(pixel.A, newred, newgreen, newblue);
+            return myRgbColor;
+        }
+
+
+        private char[] passE;
+        private char[] messageLengthBinaryChar;
+        private char[] frameLengthBinaryChar;
+
+        private void btnEmbed_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (radioLSB8Dir.Checked != false || radioLSBXOR8Dir.Checked != false || radioXORLSB.Checked != false)
+                {
+
+                    Cursor.Current = Cursors.WaitCursor;
+
+                    Stopwatch stopwatch = new Stopwatch();
+                    stopwatch.Start();
+
+
+
+
+                    Bitmap img = new Bitmap(allFrames + @"\" + (Convert.ToInt16(txtFrameSelected.Text.Trim())).ToString("D6") + ".bmp");
+
+                    //here get the message from user
+                    message = txtSecrectMessage.Text;
+
+                    //message is converted to 8bit binary
+                    StringBuilder sb = new StringBuilder();
+                    foreach (char c in message.ToCharArray())
+                    {
+                        sb.Append(Convert.ToString(c, 2).PadLeft(8, '0'));
+                    }
+                    messageBinary = sb.ToString();
+
+                    //to maintain error from pass length we have to add (extra 0 or 00)
+                    if (((messageBinary.Length) % 3) == 2)
+                    {
+                        messageBinary += "0";
+                    }
+                    else if (((messageBinary.Length) % 3) == 1)
+                    {
+                        messageBinary += "00";
+                    }
+
+                    passE = messageBinary.ToCharArray();
+
+                    //Console.WriteLine(messageBinary);
+
+                    if (radioLSB8Dir.Checked == true)
+                    {
+
+                        #region selected frame secret message embedding
+
+                        //here we have find out the total pixels number and per direction's pixel numbers
+                        int messageBinaryLength = messageBinary.Length;
+                        int allPixel = messageBinaryLength / (3);
+                        int perLine = Convert.ToInt32(messageBinaryLength / (3 * 8));
+                        int extraPixel = allPixel - (perLine * 8) - 1;
+
+
+                        //here we are starting the embedding
+                        //===================================
+                        //===================================
+                        //===================================
+
+                        //here we are embedding the center pixel
+                        img.SetPixel((img.Width) / 2, (img.Height) / 2, embed_data_pixel_rgba(img, Convert.ToInt32((img.Width) / 2), Convert.ToInt32((img.Height) / 2), 0, 0));
+
+                        bitno = 3; //this bitno will help me to know the tract of message character index
+
+                        //now we are going to insert the
+                        for (int i = 1; i <= perLine; i++) //this loop for up-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2);
+                            int y = Convert.ToInt32((img.Height) / 2) - i;
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for right-up-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) + i;
+                            int y = Convert.ToInt32((img.Height) / 2) - i;
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for right-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) + i;
+                            int y = Convert.ToInt32((img.Height) / 2);
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for right-down-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) + i;
+                            int y = Convert.ToInt32((img.Height) / 2) + i;
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for down-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2);
+                            int y = Convert.ToInt32((img.Height) / 2) + i;
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for left - down - direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) - i;
+                            int y = Convert.ToInt32((img.Height) / 2) + i;
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine; i++)//this loop for left-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) - i;
+                            int y = Convert.ToInt32((img.Height) / 2);
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+                        for (int i = 1; i <= perLine + extraPixel; i++) //this loop for left-up-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) - i;
+                            int y = Convert.ToInt32((img.Height) / 2) - i;
+                            img.SetPixel(x, y, embed_data_pixel_rgba(img, x, y, bitno, 0));
+                            bitno = bitno + 3; //this bitno will help me to know the tract of message character index
+                        }
+
+
+                        //===================================
+                        //here we are hiding message length
+                        int messageLength = message.Length;
+                        string messageLengthBinary = Convert.ToString(messageLength, 2).PadLeft(12, '0'); ;
+                        messageLengthBinaryChar = messageLengthBinary.ToCharArray();
+
+                        //for 1st pixel (x1,y1) = {((w/2)-2),1}
+                        int x1 = Convert.ToInt32((((img.Width) / 2) - 2));
+                        int y1 = Convert.ToInt32(1);
+                        img.SetPixel(x1, y1, embed_data_pixel_rgba(img, x1, y1, 0, 1));
+
+                        //for 2nd pixel 
+                        int x2 = Convert.ToInt32(img.Width - 1);
+                        int y2 = Convert.ToInt32((img.Height / 2) - 2);
+                        img.SetPixel(x2, y2, embed_data_pixel_rgba(img, x2, y2, 3, 1));
+
+                        //for 3rd pixel 
+                        int x3 = Convert.ToInt32((img.Width / 2) + 2);
+                        int y3 = Convert.ToInt32(img.Height - 1);
+                        img.SetPixel(x3, y3, embed_data_pixel_rgba(img, x3, y3, 6, 1));
+
+                        //for 3rd pixel 
+                        int x4 = Convert.ToInt32(1);
+                        int y4 = Convert.ToInt32((img.Height / 2) + 2);
+                        img.SetPixel(x4, y4, embed_data_pixel_rgba(img, x4, y4, 9, 1));
+
+                        img.Save(stegoFrameStore + @"\" + (Convert.ToInt16(txtFrameSelected.Text.Trim())).ToString("D6") + ".bmp", ImageFormat.Bmp);
+                        #endregion
+
+
+                        #region conceal the secret frame number into 1 no frame
+                        //================================================
+                        //================================================
+                        //height video frame can be 4095 i mean 2.5 min max video length
+                        //we are storing this info into first frame of video
+                        img = new Bitmap(allFrames + @"\000001.bmp");
+
+
+                        int frameLength = Convert.ToInt32((Convert.ToInt16(txtFrameSelected.Text.Trim())).ToString("D6"));
+                        string frameLengthBinary = Convert.ToString(frameLength, 2).PadLeft(12, '0');
+                        frameLengthBinaryChar = frameLengthBinary.ToCharArray();
+
+
+                        //for 1st pixel (x1,y1) = {((w/2)-2),1}
+                        x1 = Convert.ToInt32((((img.Width) / 2) - 2));
+                        y1 = Convert.ToInt32(1);
+                        img.SetPixel(x1, y1, embed_data_pixel_rgba(img, x1, y1, 0, 2));
+
+                        //for 2nd pixel 
+                        x2 = Convert.ToInt32(img.Width - 1);
+                        y2 = Convert.ToInt32((img.Height / 2) - 2);                      
+                        img.SetPixel(x2, y2, embed_data_pixel_rgba(img, x2, y2, 3, 2));
+
+                        //for 3rd pixel 
+                        x3 = Convert.ToInt32((img.Width / 2) + 2);
+                        y3 = Convert.ToInt32(img.Height - 1);
+                        img.SetPixel(x3, y3, embed_data_pixel_rgba(img, x3, y3, 6, 2));
+
+                        //for fourth pixel
+                        x4 = Convert.ToInt32(1);
+                        y4 = Convert.ToInt32((img.Height / 2) + 2);
+                        img.SetPixel(x4, y4, embed_data_pixel_rgba(img, x4, y4, 9, 2));
+
+                        img.Save(stegoFrameStore + @"\000001.bmp", ImageFormat.Bmp);
+
+                        #endregion
+
+
+                        string saveVideoFolder = "";
+                        var betterFolderBrowser = new BetterFolderBrowser();
+
+                        betterFolderBrowser.Title = "Select folders...";
+                        betterFolderBrowser.RootFolder = "C:\\";
+
+                        // Allow multi-selection of folders.
+                        betterFolderBrowser.Multiselect = false;
+
+                        if (betterFolderBrowser.ShowDialog() == DialogResult.OK)
+                        {
+                            string[] selectedFolders = betterFolderBrowser.SelectedFolders;
+
+                            saveVideoFolder = selectedFolders[0];
+                            // If you've disabled multi-selection, use 'SelectedFolder'.
+                            // string selectedFolder = betterFolderBrowser1.SelectedFolder;
+                        }
+
+
+
+                        string[] allFramesForVideo = Directory.GetFiles(allFrames);
+                        foreach (string s in allFramesForVideo)
+                        {
+                            if (Path.GetFileName(s) != frameNo.ToString("D6") + ".bmp")
+                            {
+                                if (Path.GetFileName(s) != "000001.bmp")
+                                {
+                                    string fileName = System.IO.Path.GetFileName(s);
+                                    string destFile = System.IO.Path.Combine(allCombineFrames + @"\", fileName);
+                                    System.IO.File.Copy(s, destFile, true);
+                                }
+                            }
+                            // Use static Path methods to extract only the file name from the path.
+
+                        }
+                        string fileName2 = frameNo.ToString("D6") + ".bmp";
+                        string destFile2 = System.IO.Path.Combine(allCombineFrames + @"\", fileName2);
+                        System.IO.File.Copy(stegoFrameStore + @"\" + frameNo.ToString("D6") + ".bmp", destFile2, true);
+
+                        fileName2 = "000001.bmp";
+                        destFile2 = System.IO.Path.Combine(allCombineFrames + @"\", fileName2);
+                        System.IO.File.Copy(stegoFrameStore + @"\000001.bmp", destFile2, true);
+
+
+
+                        Cursor.Current = Cursors.WaitCursor;
+                        //ffmpeg -i C:\VideoSteganography\Cover.avi -vf fps=30 C:\VideoSteganography\allFrames\%06d.bmp
+                        //C:\\VideoSteganography\\video.avi
+                        System.Diagnostics.Process process = new System.Diagnostics.Process();
+                        System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo();
+                        startInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                        startInfo.FileName = "cmd.exe";
+                        
+                        var a = "/C ffmpeg -i C:\\VideoSteganography\\allCombinedFrames\\%06d.bmp -pix_fmt bgr24 -c:v libx264rgb -preset veryslow -qp 0 C:\\VideoSteganography\\stegovideo.avi";
+
+
+                        startInfo.Arguments = a;
+                        process.StartInfo = startInfo;
+                        process.Start();
+                        process.WaitForExit();
+                        Cursor.Current = Cursors.Default;
+
+                        MessageBox.Show("Embedding Success");
+
+
+                    }
+                    else if (radioLSBXOR8Dir.Checked == true)
+                    {
+                        MessageBox.Show("XOR LSB 8 Dir Will come...");
+                    }
+                    else if (radioXORLSB.Checked == true)
+                    {
+                        MessageBox.Show("XOR LSB Will come...");
+                    }
+
+                    //here we are stored the stego frame
+
+                    stopwatch.Stop();
+                    embedTime = (stopwatch.Elapsed.TotalSeconds).ToString();
+
+                    lblValidationHeading.Visible = true;
+                    btnValidation.Visible = true;
+
+                    Cursor.Current = Cursors.Default;
+                }
+                else
+                {
+                    MessageBox.Show("Please select an algorithm!!!");
+                }
+
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("" + ex);
+            }
+
+
+
+        }
+
+        private void btnValidation_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                Cursor.Current = Cursors.WaitCursor;
+                double mseGray = 0.0, mse = 0.0, psnr = 0.0;
+                Bitmap bmp1 = new Bitmap(allFrames + @"\" + (Convert.ToInt16(txtFrameSelected.Text.Trim())).ToString("D6") + ".bmp");
+                Bitmap bmp2 = new Bitmap(stegoFrameStore + @"\" + (Convert.ToInt16(txtFrameSelected.Text.Trim())).ToString("D6") + ".bmp");
+                for (int i = 0; i < bmp1.Width; i++)
+                {
+                    for (int j = 0; j < bmp1.Height; j++)
+                    {
+                        int gray1 = bmp1.GetPixel(i, j).R;
+                        int gray2 = bmp2.GetPixel(i, j).R;
+                        double sum = Math.Pow(gray1 - gray2, 2);
+                        mseGray += sum;
+                    }
+                }
+                mse = (mseGray) / (bmp1.Width * bmp1.Height) * 3;
+                psnr = 10 * Math.Log10((255 * 255) / mse);
+
+                lblMSE.Text = "Value of MSE: " + Math.Round(mse, 5).ToString();
+                lblPSNR.Text = "Value of PSNR: " + Math.Round(psnr, 5).ToString();
+                lblTGSI.Text = "Embedding time: " + embedTime + " (Second)";
+
+                lblMAE.Visible = true;
+                lblMSE.Visible = true;
+                lblPSNR.Visible = true;
+                lblRMSE.Visible = true;
+                lblSNR.Visible = true;
+                lblSSIM.Visible = true;
+                lblTGSI.Visible = true;
+                Cursor.Current = Cursors.Default;
+
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("" + ex);
+            }
+
+        }
+
+
+        private string readPixelData(Bitmap img, int x, int y)
+        {
+            System.Drawing.Color pixel = img.GetPixel(x, y);
+            string red = Convert.ToString(pixel.R, 2).PadLeft(8, '0');
+            string green = Convert.ToString(pixel.G, 2).PadLeft(8, '0');
+            string blue = Convert.ToString(pixel.B, 2).PadLeft(8, '0');
+            string data = red.Last().ToString() + green.Last().ToString() + blue.Last().ToString();
+            return data;
+        }
+
+
+        private void btnRetrive_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (radioLSB8Dir.Checked == true || radioLSBXOR8Dir.Checked == true || radioXORLSB.Checked == true)
+                {
+                    if (radioLSB8Dir.Checked == true)
+                    {
+                        string frameNoBinary = "";
+                        string messageLengthBinary = "";
+                        string secretMessage = "";
+                        //at first we are taking selected frames no where we have kept secrect message
+                        Bitmap img = new Bitmap(allFramesStego + @"\000001.bmp");
+
+                        //int x1, x2, x3, x4, y1, y2, y3, y4;
+
+                        #region Get Secret Frame number from 1st frame
+
+                        //for 1st pixel
+                        int x1 = Convert.ToInt32((((img.Width) / 2) - 2));
+                        int y1 = Convert.ToInt32(1);
+                        frameNoBinary += readPixelData(img, x1, y1);
+
+
+                        //for 2nd pixel 
+                        int x2 = Convert.ToInt32(img.Width - 1);
+                        int y2 = Convert.ToInt32((img.Height / 2) - 2);
+                        frameNoBinary += readPixelData(img, x2, y2);
+
+                        //for 3rd pixel 
+                        int x3 = Convert.ToInt32((img.Width / 2) + 2);
+                        int y3 = Convert.ToInt32(img.Height - 1);
+                        frameNoBinary += readPixelData(img, x3, y3);
+
+                        //for 3rd pixel 
+                        int x4 = Convert.ToInt32(1);
+                        int y4 = Convert.ToInt32((img.Height / 2) + 2);
+                        frameNoBinary += readPixelData(img, x4, y4);
+
+                        #endregion
+
+                        //here we got the frame no from the 4 pixel of that 000001.bmp
+                        int frameN = Convert.ToInt32(frameNoBinary, 2);
+                        //frameN = 75;
+
+                        if (!File.Exists(allFramesStego + @"\" + frameN.ToString("D6") + ".bmp"))
+                        {
+                            MessageBox.Show("Frame no: " + frameN.ToString() + "is selected which is not correct!!" +
+                                " App is going to close.");
+                            this.Close();
+                        }
+                        //here we are load that secter frame where we have kept our secret value
+                        img = new Bitmap(allFramesStego + @"\" + frameN.ToString("D6") + ".bmp");
+
+                        //now our target is to get scret message size
+                        //==========================================
+                        //for 1st pixel (x1,y1) = {((w/2)-2),1}
+                        x1 = Convert.ToInt32((((img.Width) / 2) - 2));
+                        y1 = Convert.ToInt32(1);
+                        messageLengthBinary += readPixelData(img, x1, y1);
+
+                        //for 2nd pixel 
+                        x2 = Convert.ToInt32(img.Width - 1);
+                        y2 = Convert.ToInt32((img.Height / 2) - 2);
+                        messageLengthBinary += readPixelData(img, x2, y2);
+
+                        //for 3rd pixel 
+                        x3 = Convert.ToInt32((img.Width / 2) + 2);
+                        y3 = Convert.ToInt32(img.Height - 1);
+                        messageLengthBinary += readPixelData(img, x3, y3);
+
+                        //for 3rd pixel 
+                        x4 = Convert.ToInt32(1);
+                        y4 = Convert.ToInt32((img.Height / 2) + 2);
+                        messageLengthBinary += readPixelData(img, x4, y4);
+
+                        //here we got the secret message length from the 4 pixel of that selected frames.bmp
+                        int messageLength = Convert.ToInt32(messageLengthBinary, 2) * 8;
+
+
+
+
+                        //here we have find out the total pixels number and per direction's pixel numbers
+                        //to maintain error from pass length we have to add (extra 0 or 00)
+                        if ((messageLength % 3) == 2)
+                        {
+                            messageLength += 1;
+                        }
+                        else if ((messageLength % 3) == 1)
+                        {
+                            messageLength += 2;
+                        }
+
+                        int messageBinaryLength = messageLength;
+                        int allPixel = messageBinaryLength / (3);
+                        int perLine = Convert.ToInt32(messageBinaryLength / (3 * 8));
+                        int extraPixel = allPixel - (perLine * 8) - 1;
+
+                        //here we are starting the embedding
+                        //===================================
+                        //===================================
+                        //===================================
+
+                        //here we are embedding the center pixel
+                        secretMessage += readPixelData(img, Convert.ToInt32((img.Width) / 2), Convert.ToInt32((img.Height) / 2));
+
+                        for (int i = 1; i <= perLine; i++) //this loop for up-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2);
+                            int y = Convert.ToInt32((img.Height) / 2) - i;
+                            secretMessage += readPixelData(img, x, y);
+
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for right-up-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) + i;
+                            int y = Convert.ToInt32((img.Height) / 2) - i;
+                            secretMessage += readPixelData(img, x, y);
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for right-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) + i;
+                            int y = Convert.ToInt32((img.Height) / 2);
+                            secretMessage += readPixelData(img, x, y);
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for right-down-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) + i;
+                            int y = Convert.ToInt32((img.Height) / 2) + i;
+                            secretMessage += readPixelData(img, x, y);
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for down-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2);
+                            int y = Convert.ToInt32((img.Height) / 2) + i;
+                            secretMessage += readPixelData(img, x, y);
+                        }
+                        for (int i = 1; i <= perLine; i++) //this loop for left - down - direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) - i;
+                            int y = Convert.ToInt32((img.Height) / 2) + i;
+                            secretMessage += readPixelData(img, x, y);
+                        }
+                        for (int i = 1; i <= perLine; i++)//this loop for left-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) - i;
+                            int y = Convert.ToInt32((img.Height) / 2);
+                            secretMessage += readPixelData(img, x, y);
+                        }
+                        for (int i = 1; i <= perLine + extraPixel; i++) //this loop for left-up-direction embedding
+                        {
+                            int x = Convert.ToInt32((img.Width) / 2) - i;
+                            int y = Convert.ToInt32((img.Height) / 2) - i;
+                            secretMessage += readPixelData(img, x, y);
+                        }
+
+
+                        char[] secretMessageBinary = secretMessage.ToCharArray();
+                        string bit8 = "";
+                        int a = 0;
+                        string secretRealMessage = "";
+                        int skip = 0;
+
+                        if ((messageLength % 3) == 2)
+                        {
+                            skip = 1;
+                        }
+                        else if ((messageLength % 3) == 1)
+                        {
+                            skip = 2;
+                        }
+
+                        //Console.WriteLine(secretMessage);
+                        for (int i = 0; i < secretMessageBinary.Length; i++)
+                        {
+                            if (a != 8)
+                            {
+                                bit8 = bit8 + secretMessageBinary[i].ToString();
+
+                                a++;
+                            }
+                            if (a == 8)
+                            {
+                                int acii = Convert.ToInt32(bit8, 2);
+                                secretRealMessage = secretRealMessage + Char.ConvertFromUtf32(acii);
+                                bit8 = "";
+                                a = 0;
+                            }
+                        }
+
+                        txtStegoSecrectMessage.Text = secretRealMessage;
+                        MessageBox.Show("Extracting!!!!!!!!!");
+
+                    }
+                    else if (radioLSBXOR8Dir.Checked == true)
+                    {
+
+                    }
+                    else if (radioXORLSB.Checked == true)
+                    {
+
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Please select an algorithm!!");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("" + ex);
+            }
+
+        }
+
+        private void btnStegoVideo_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                OpenFileDialog openFileDialog = new OpenFileDialog();
+
+                openFileDialog.InitialDirectory = "c:\\";
+
+                openFileDialog.Filter = "All Media Files|*.avi;*.mp4;*.mov;*.3g2;*.3gp;*.AVI;*.MP4;*.MOV;*.3G2;*.3GP";
+                openFileDialog.FilterIndex = 2;
+                openFileDialog.RestoreDirectory = true;
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    //Get the path of specified file
+                    videoFilePath = openFileDialog.FileName;
+                }
+
+
+
+                Cursor.Current = Cursors.WaitCursor;
+                //ffmpeg -i C:\VideoSteganography\Cover.avi -vf fps=30 C:\VideoSteganography\allFrames\%06d.bmp
+                //C:\\VideoSteganography\\video.avi
+                System.Diagnostics.Process process = new System.Diagnostics.Process();
+                System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo();
+                startInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                startInfo.FileName = "cmd.exe";
+                startInfo.Arguments = "/C ffmpeg -i " + videoFilePath + " -vf fps=25 C:\\VideoSteganography\\allFramesStego\\%06d.bmp";
+                process.StartInfo = startInfo;
+                process.Start();
+                process.WaitForExit();
+                Cursor.Current = Cursors.Default;
+
+
+                MessageBox.Show("Frame extrating completd");
+
+
+            }
+            catch (Exception ex)
+            {
+                //MessageBox.Show("" + ex);
+            }
+        }
+    }
+}
